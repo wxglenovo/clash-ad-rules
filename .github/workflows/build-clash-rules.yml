@@ -22,7 +22,7 @@ jobs:
           echo "🔽 下载规则..."
           curl -sSL --retry 5 https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/Rules/adblock.txt > download/adblock.txt
           curl -sSL --retry 5 https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt > download/hagezi-pro.txt
-          # 自定义规则源
+          # 可添加自定义规则源
           # curl -sSL --retry 5 https://raw.githubusercontent.com/你的用户名/AdGuardHome-Filter/main/myrules.txt > download/myrules.txt
 
       # 3️⃣ 分类型合并去重
@@ -34,7 +34,6 @@ jobs:
           grep -E '^DOMAIN-KEYWORD' download/*.txt | sort -u > dist/domain-keyword.txt
           grep -E '^DOMAIN,' download/*.txt | sort -u > dist/domain.txt
 
-          # 生成最终 Clash YAML
           OUTPUT="dist/merged-clash.yaml"
           {
             echo "# =========================================="
@@ -51,19 +50,20 @@ jobs:
 
           echo "✅ 完成！生成文件: $OUTPUT"
 
-      # 4️⃣ Commit & Push
+      # 4️⃣ Commit & Push（使用 PAT）
       - name: Commit & Push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add dist/merged-clash.yaml
           git commit -m "Update Clash rules $(date -u +%Y-%m-%d)" || echo "No changes to commit"
-          
-          # 安全 push
-          git push origin HEAD:main
 
-          # 可选自动打 tag
+          # 使用 PAT 推送，确保不会被 403
+          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/wxglenovo/clash-ad-rules.git
+          git push origin main
+
+          # 可选：自动打 tag
           git tag -fa "clash-rules-$(date -u +%Y-%m-%d)" -m "Clash rules updated $(date -u +%Y-%m-%d)"
           git push origin --tags
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
