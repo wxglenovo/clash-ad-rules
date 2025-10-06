@@ -2,8 +2,8 @@ name: Build Clash Rules
 
 on:
   schedule:
-    - cron: "0 0 * * *"
-    - cron: "0 12 * * *"
+    - cron: "0 0 * * *"    # 每天 UTC 0 点
+    - cron: "0 12 * * *"   # 每天 UTC 12 点
   workflow_dispatch:
 
 permissions:
@@ -17,14 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
-
-      - name: Download Clash YAML Sources
+      - name: Download & Merge Clash YAML Rules
         run: |
-          mkdir -p tmp
+          mkdir -p dist tmp
           urls=(
             "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Clash.yaml"
             "https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.yaml"
@@ -36,51 +31,15 @@ jobs:
             "https://hub.gitmirror.com/raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Providers/BanAD.yaml"
           )
 
-          for i in "${!urls[@]}"; do
-            echo "Downloading ${urls[$i]}"
-            curl -sSL --retry 3 "${urls[$i]}" -o tmp/source_$i.yaml
+          > tmp/merged.yaml
+          for url in "${urls[@]}"; do
+            echo "# ===== 来源: $url =====" >> tmp/merged.yaml
+            curl -sSL --retry 3 "$url" >> tmp/merged.yaml || echo "Failed $url"
+            echo "" >> tmp/merged.yaml
           done
 
-      - name: Merge & Deduplicate Rules
-        run: |
-          mkdir -p dist
-          python3 - <<EOF
-import yaml
-import glob
-from datetime import datetime
-
-sources = glob.glob("tmp/*.yaml")
-all_rules = set()
-
-for src in sources:
-    with open(src, "r", encoding="utf-8") as f:
-        try:
-            data = yaml.safe_load(f)
-            if isinstance(data, dict):
-                for key in ["rules", "payload"]:
-                    if key in data and isinstance(data[key], list):
-                        for line in data[key]:
-                            line = str(line).strip().strip("'\"")
-                            if line and not line.startswith("#"):
-                                all_rules.add(line)
-            elif isinstance(data, list):
-                for line in data:
-                    line = str(line).strip().strip("'\"")
-                    if line and not line.startswith("#"):
-                        all_rules.add(line)
-        except Exception as e:
-            continue
-
-output_file = "dist/merged-clash.yaml"
-with open(output_file, "w", encoding="utf-8") as f:
-    f.write("# =======================================\n")
-    f.write("# Clash Rules - 自动生成\n")
-    f.write(f"# 生成时间: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n")
-    f.write(f"# 规则总数: {len(all_rules)}\n")
-    f.write("# =======================================\n\n")
-    for rule in sorted(all_rules):
-        f.write(rule + "\n")
-EOF
+          cp tmp/merged.yaml dist/merged-clash.yaml
+          echo "RELEASE_TAG=clash-rules-$(date -u +'%Y%m%d')" >> $GITHUB_ENV
 
       - name: Commit & Push
         run: |
@@ -102,16 +61,16 @@ EOF
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: clash-rules-$(date -u +'%Y%m%d')
+          tag_name: ${{ env.RELEASE_TAG }}
           name: "Clash 规则更新"
-          body: "本次规则自动生成更新，总规则数: $(wc -l < dist/merged-clash.yaml)"
+          body: "本次规则自动生成更新"
           files: |
             dist/merged-clash.yaml
 
       - name: Show Rules Stats
         run: |
+          total_lines=$(wc -l < dist/merged-clash.yaml)
           echo "================= Clash Rules Stats ================="
-          total_rules=$(grep -E '^(DOMAIN-SUFFIX|DOMAIN-KEYWORD|DOMAIN|IP-CIDR|IP-CIDR6),' dist/merged-clash.yaml | wc -l)
-          echo "Merged total rules: $total_rules"
+          echo "Merged total lines: $total_lines"
           head -n 20 dist/merged-clash.yaml
           echo "====================================================="
