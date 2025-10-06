@@ -37,5 +37,5 @@ try {
 } catch {
     Write-Host "⚠️ Unexpected error: $_"
 } finally {
-    exit 0  # 保证 workflow 不因脚本报错失败
+    exit 0  # 保证 workflow 不报错
 }
