@@ -62,7 +62,7 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/wxglenovo/clash-ad-rules.git
           git push origin main
 
-          # 可选：自动打 tag
+          # 可选自动打 tag
           git tag -fa "clash-rules-$(date -u +%Y-%m-%d)" -m "Clash rules updated $(date -u +%Y-%m-%d)"
           git push origin --tags
         env:
