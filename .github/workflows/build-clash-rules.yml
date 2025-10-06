@@ -30,39 +30,53 @@ jobs:
         run: |
           echo "⚡ 分类型去重..."
           mkdir -p dist
+
+          # 分类型去重
           grep -E '^DOMAIN-SUFFIX' download/*.txt | sort -u > dist/domain-suffix.txt
           grep -E '^DOMAIN-KEYWORD' download/*.txt | sort -u > dist/domain-keyword.txt
           grep -E '^DOMAIN,' download/*.txt | sort -u > dist/domain.txt
 
+          # 生成单独 YAML 文件
+          for type in domain-suffix domain-keyword domain; do
+            OUTPUT="dist/${type}.yaml"
+            {
+              echo "# =========================================="
+              echo "# Clash 广告过滤规则 - ${type}"
+              echo "# 更新时间: $(date -u +%Y-%m-%d %H:%M:%S) UTC"
+              echo "# 来源: adblock, hagezi-pro 等"
+              echo "# =========================================="
+              echo ""
+            } > $OUTPUT
+            cat dist/${type}.txt >> $OUTPUT
+            echo "✅ 生成文件: $OUTPUT"
+          done
+
+          # 生成完整合并文件
           OUTPUT="dist/merged-clash.yaml"
           {
             echo "# =========================================="
-            echo "# Clash 广告过滤规则 - 合并去重"
+            echo "# Clash 广告过滤规则 - 全部合并"
             echo "# 更新时间: $(date -u +%Y-%m-%d %H:%M:%S) UTC"
             echo "# 来源: adblock, hagezi-pro 等"
             echo "# =========================================="
             echo ""
           } > $OUTPUT
-
-          cat dist/domain-suffix.txt >> $OUTPUT
-          cat dist/domain-keyword.txt >> $OUTPUT
-          cat dist/domain.txt >> $OUTPUT
-
-          echo "✅ 完成！生成文件: $OUTPUT"
+          cat dist/domain-suffix.txt dist/domain-keyword.txt dist/domain.txt >> $OUTPUT
+          echo "✅ 生成文件: $OUTPUT"
 
       # 4️⃣ Commit & Push（使用 PAT）
       - name: Commit & Push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add dist/merged-clash.yaml
+          git add dist/*.yaml
           git commit -m "Update Clash rules $(date -u +%Y-%m-%d)" || echo "No changes to commit"
 
-          # 使用 PAT 推送，确保不会被 403
+          # 使用 PAT 推送
           git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/wxglenovo/clash-ad-rules.git
           git push origin main
 
-          # 可选自动打 tag
+          # 自动打 tag
           git tag -fa "clash-rules-$(date -u +%Y-%m-%d)" -m "Clash rules updated $(date -u +%Y-%m-%d)"
           git push origin --tags
         env:
