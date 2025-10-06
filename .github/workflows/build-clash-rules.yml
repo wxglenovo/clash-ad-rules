@@ -1,0 +1,69 @@
+name: Build Clash Rules
+
+on:
+  schedule:
+    - cron: "0 0 * * *"     # 每天 0 点 UTC（北京时间早上 8 点）
+    - cron: "0 12 * * *"    # 每天 12 点 UTC（北京时间晚上 8 点）
+  workflow_dispatch:         # 支持手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ 检出仓库
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ 下载规则源
+      - name: Download rules
+        run: |
+          mkdir -p download
+          echo "🔽 下载规则..."
+          curl -sSL --retry 5 https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/Rules/adblock.txt > download/adblock.txt
+          curl -sSL --retry 5 https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt > download/hagezi-pro.txt
+          # 自定义规则源
+          # curl -sSL --retry 5 https://raw.githubusercontent.com/你的用户名/AdGuardHome-Filter/main/myrules.txt > download/myrules.txt
+
+      # 3️⃣ 分类型合并去重
+      - name: Merge & Dedup
+        run: |
+          echo "⚡ 分类型去重..."
+          mkdir -p dist
+          grep -E '^DOMAIN-SUFFIX' download/*.txt | sort -u > dist/domain-suffix.txt
+          grep -E '^DOMAIN-KEYWORD' download/*.txt | sort -u > dist/domain-keyword.txt
+          grep -E '^DOMAIN,' download/*.txt | sort -u > dist/domain.txt
+
+          # 生成最终 Clash YAML
+          OUTPUT="dist/merged-clash.yaml"
+          {
+            echo "# =========================================="
+            echo "# Clash 广告过滤规则 - 合并去重"
+            echo "# 更新时间: $(date -u +%Y-%m-%d %H:%M:%S) UTC"
+            echo "# 来源: adblock, hagezi-pro 等"
+            echo "# =========================================="
+            echo ""
+          } > $OUTPUT
+
+          cat dist/domain-suffix.txt >> $OUTPUT
+          cat dist/domain-keyword.txt >> $OUTPUT
+          cat dist/domain.txt >> $OUTPUT
+
+          echo "✅ 完成！生成文件: $OUTPUT"
+
+      # 4️⃣ Commit & Push
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add dist/merged-clash.yaml
+          git commit -m "Update Clash rules $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          
+          # 安全 push
+          git push origin HEAD:main
+
+          # 可选自动打 tag
+          git tag -fa "clash-rules-$(date -u +%Y-%m-%d)" -m "Clash rules updated $(date -u +%Y-%m-%d)"
+          git push origin --tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
