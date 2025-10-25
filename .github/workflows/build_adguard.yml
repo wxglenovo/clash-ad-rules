@@ -2,7 +2,7 @@ name: Build AdGuardHome Rules
 
 on:
   schedule:
-    - cron: "0 */2 * * *"   # 每两小时
+    - cron: "0 */2 * * *"   # 每两小时自动执行
   workflow_dispatch:         # 支持手动触发
 
 permissions:
@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -30,6 +28,8 @@ jobs:
       - name: Convert to AdGuard Home format
         run: |
           python3 - <<'EOF'
+          import re
+
           converted = []
 
           with open("adblock_reject.txt", "r", encoding="utf-8") as f:
@@ -37,8 +37,9 @@ jobs:
                   line = line.strip()
                   if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
                       continue
-                  # 去掉开头的 - ' 和末尾的 '
-                  line = line.lstrip("- '").rstrip("'")
+                  # 去掉开头的 - ' 或多个 -，末尾的 '
+                  line = re.sub(r"^-+\s*'?", "", line)
+                  line = line.rstrip("'")
                   converted.append(f"||{line}^")
 
           with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
