@@ -52,6 +52,8 @@ jobs:
                       # 去掉开头的 - ' 或多个 -，末尾的 '
                       line = re.sub(r"^-+\s*'?", "", line)
                       line = line.rstrip("'")
+                      # 去掉开头的点
+                      line = line.lstrip(".")
                       converted.append(f"||{line}^")
 
           # 去重、排序
@@ -70,3 +72,12 @@ jobs:
           git add AdGuardHome.txt
           git commit -m "Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
           git push origin HEAD:main
+
+      - name: Show result
+        run: |
+          echo "================= ✅ 合并完成 ================="
+          echo "📁 文件路径：AdGuardHome.txt"
+          echo "📊 总行数：$(wc -l < AdGuardHome.txt)"
+          echo "前 20 行示例："
+          head -n 20 AdGuardHome.txt
+          echo "============================================================"
