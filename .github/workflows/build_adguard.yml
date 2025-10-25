@@ -1,1 +1,51 @@
 
+name: Build AdGuardHome Rules
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"   # 每两小时自动执行
+  workflow_dispatch:         # 支持手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Download Shadowrocket rules
+        run: |
+          curl -L -o adblock_reject.txt https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt
+
+      - name: Convert to AdGuard Home format
+        run: |
+          python3 - <<'EOF'
+          import re
+
+          with open("adblock_reject.txt", "r", encoding="utf-8") as f:
+              lines = f.readlines()
+
+          converted = []
+          for line in lines:
+              line = line.strip()
+              if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
+                  continue  # 注释或空行
+              converted.append(line)  # ||example.com^ 等规则直接兼容
+
+          with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
+              f.write("\n".join(converted))
+          EOF
+
+      - name: Commit and push AdGuardHome rules
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add AdGuardHome.txt
+          git commit -m "Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+          git push
