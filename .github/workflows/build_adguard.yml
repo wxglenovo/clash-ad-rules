@@ -1,72 +1,116 @@
-name: Build AdGuardHome Rules
+name: Build AdGuardHome Rules from Shadowrocket
 
 on:
   schedule:
     - cron: "0 */2 * * *"   # 每两小时自动执行
-  workflow_dispatch:         # 支持手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # ✅ 使用 PAT checkout 仓库，保证 push 有权限
+      # ✅ Checkout 仓库并使用 PAT 避免 403
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
-          repository: wxglenovo/Shadowrocket-to-AdGuard-Home
-          ssh-strict: true
-          persist-credentials: true
-          clean: true
-          sparse-checkout-cone-mode: true
-          fetch-depth: 1
-          fetch-tags: false
-          lfs: false
-          submodules: false
-          set-safe-directory: true
-
-      # ✅ 安装 Python
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
 
       # ✅ 下载 Shadowrocket 规则
       - name: Download Shadowrocket rules
         run: |
-          curl -L -o adblock_reject.txt https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt
+          mkdir -p tmp dist
+          curl -L -o tmp/adblock_reject.txt https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt
 
-      # ✅ 转换为 AdGuard Home 格式
-      - name: Convert to AdGuard Home format
+      # ✅ 转换为 AdGuard Home 格式并清理
+      - name: Convert Shadowrocket to AdGuard Home
         run: |
-          python3 - <<'EOF'
-          import re
+          awk '!/^(\s*(!|\[|#)|$)/{print}' tmp/adblock_reject.txt > tmp/all_cleaned.txt
+          sort tmp/all_cleaned.txt | uniq > tmp/all_deduped.txt
 
-          with open("adblock_reject.txt", "r", encoding="utf-8") as f:
-              lines = f.readlines()
+          # 统计
+          RAW_COUNT=$(wc -l < tmp/all_cleaned.txt)
+          DEDUP_COUNT=$(wc -l < tmp/all_deduped.txt)
+          DUP_COUNT=$((RAW_COUNT - DEDUP_COUNT))
 
-          converted = []
-          for line in lines:
-              line = line.strip()
-              if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
-                  continue
-              converted.append(line)
+          TIMESTAMP=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S %Z')
 
-          with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
-              f.write("\n".join(converted))
-          EOF
+          echo "原始总数：$RAW_COUNT" | tee dist/old_rules.txt
+          echo "去重后：$DEDUP_COUNT" | tee -a dist/old_rules.txt
+          echo "重复行数：$DUP_COUNT" | tee -a dist/old_rules.txt
+          echo "更新时间：$TIMESTAMP" | tee -a dist/old_rules.txt
 
-      # ✅ Commit & push 使用 PAT
-      - name: Commit and push AdGuardHome rules
+          # 输出最终 AdGuardHome.txt
+          {
+            echo "! ================================================================"
+            echo "! 🧩 AdGuardHome 规则 (从 Shadowrocket 转换)"
+            echo "! 更新时间：$TIMESTAMP"
+            echo "! 原始规则数：$RAW_COUNT"
+            echo "! 去重后规则数：$DEDUP_COUNT"
+            echo "! ================================================================"
+            cat tmp/all_deduped.txt
+          } > dist/AdGuardHome.txt
+
+          echo "$DEDUP_COUNT" > dist/line_count.txt
+
+      # ✅ Commit & push
+      - name: Commit Changes
+        id: commit
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-          git add AdGuardHome.txt
-          git commit -m "🧩 Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+          PREV_COUNT=$(git show origin/main:dist/line_count.txt 2>/dev/null || echo 0)
+          NEW_COUNT=$(cat dist/line_count.txt)
+          NEW_ADDED=$((NEW_COUNT - PREV_COUNT))
+          [ $NEW_ADDED -lt 0 ] && NEW_ADDED=0
 
-          # 直接 push 使用 PAT
-          git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }} HEAD:main
+          COMMIT_MSG="🧩 更新 AdGuardHome 规则，从 Shadowrocket 转换，新增 ${NEW_ADDED} 条"
+
+          git add dist/AdGuardHome.txt dist/old_rules.txt dist/line_count.txt
+          if git diff --cached --quiet; then
+            echo "no_change=true" >> $GITHUB_OUTPUT
+            echo "No new rules to commit"
+          else
+            echo "no_change=false" >> $GITHUB_OUTPUT
+            git commit -m "$COMMIT_MSG"
+            git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }} HEAD:main
+            echo "commit_message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+            echo "new_count=$NEW_COUNT" >> $GITHUB_OUTPUT
+            echo "new_added=$NEW_ADDED" >> $GITHUB_OUTPUT
+          fi
+
+      # ✅ Release（可选）
+      - name: Create or Update Release
+        if: steps.commit.outputs.no_change == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.run_number }}"
+          name: "🧩 AdGuardHome Rules (from Shadowrocket)"
+          body: |
+            ${{ steps.commit.outputs.commit_message }}
+            ---
+            📦 文件名：AdGuardHome.txt  
+            📊 总行数：${{ steps.commit.outputs.new_count }}  
+            ➕ 新增：${{ steps.commit.outputs.new_added }} 条
+          files: |
+            dist/AdGuardHome.txt
+            dist/old_rules.txt
+
+      # ✅ 输出结果
+      - name: Show Result
+        run: |
+          echo "================= ✅ 转换完成 ================="
+          cat dist/old_rules.txt
+          echo "------------------------------------------------------------"
+          echo "📁 文件路径：dist/AdGuardHome.txt"
+          echo "📊 总行数：$(wc -l < dist/AdGuardHome.txt)"
+          echo "------------------------------------------------------------"
+          echo "前 20 行示例："
+          head -n 20 dist/AdGuardHome.txt
+          echo "============================================================"
