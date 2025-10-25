@@ -34,8 +34,8 @@ jobs:
           for line in lines:
               line = line.strip()
               if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
-                  continue  # 注释或空行
-              converted.append(line)  # ||example.com^ 等规则直接兼容
+                  continue
+              converted.append(line)
 
           with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
               f.write("\n".join(converted))
@@ -45,8 +45,11 @@ jobs:
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
           git add AdGuardHome.txt
-          git commit -m "Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+          git commit -m "🧩 Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+
+          # 推送到 main 分支
           git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }} HEAD:main
