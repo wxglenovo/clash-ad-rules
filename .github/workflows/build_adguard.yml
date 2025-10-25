@@ -10,18 +10,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ✅ 使用 PAT checkout 仓库，保证 push 有权限
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
+      # ✅ 安装 Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.x"
 
+      # ✅ 下载 Shadowrocket 规则
       - name: Download Shadowrocket rules
         run: |
           curl -L -o adblock_reject.txt https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt
 
+      # ✅ 转换为 AdGuard Home 格式
       - name: Convert to AdGuard Home format
         run: |
           python3 - <<'EOF'
@@ -41,6 +47,7 @@ jobs:
               f.write("\n".join(converted))
           EOF
 
+      # ✅ Commit & push 使用 PAT
       - name: Commit and push AdGuardHome rules
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -51,5 +58,5 @@ jobs:
           git add AdGuardHome.txt
           git commit -m "🧩 Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
 
-          # 推送到 main 分支
+          # 直接 push 使用 PAT
           git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }} HEAD:main
