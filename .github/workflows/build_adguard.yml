@@ -1,4 +1,4 @@
-name: Build AdGuardHome Rules
+name: Build AdGuardHome Rules (with CDN compression)
 
 on:
   schedule:
@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Download Shadowrocket & Surge rules
+      - name: Download rule sources
         run: |
           mkdir -p tmp
           urls=(
@@ -34,14 +34,35 @@ jobs:
               curl -sSL --retry 3 "$url" -o "tmp/$filename"
           done
 
-      - name: Convert to AdGuard Home format
+      - name: Convert & compress to AdGuard Home format
         run: |
           python3 - <<'EOF'
-          import re
-          import glob
+          import re, glob
+          from collections import defaultdict
 
-          converted = []
+          def compress_to_wildcard(domains):
+              """
+              将同一二级域名的多个子域压缩为泛域名
+              """
+              grouped = defaultdict(set)
+              for d in domains:
+                  parts = d.split(".")
+                  if len(parts) >= 3:
+                      base = ".".join(parts[-2:])   # 取后两段，如 cdnhwc2.com
+                      grouped[base].add(d)
+                  else:
+                      grouped[d].add(d)
 
+              compressed = set()
+              for base, group in grouped.items():
+                  subs = {x for x in group if x.count(".") > base.count(".")}
+                  if len(subs) >= 3:  # 超过3个相似子域时使用泛域名
+                      compressed.add(f"*.{base}")
+                  else:
+                      compressed.update(group)
+              return compressed
+
+          all_domains = set()
           files = glob.glob("tmp/*")
           for file in files:
               with open(file, "r", encoding="utf-8") as f:
@@ -49,29 +70,35 @@ jobs:
                       line = line.strip()
                       if not line or line.startswith(("!", "[", "#")):
                           continue
-                      # 去掉 YAML 或 Surge 类规则中的特殊符号
                       line = re.sub(r"^-+\s*'?", "", line)
-                      line = line.rstrip("'")
-                      # 去掉前导的点和空格
-                      line = line.lstrip(". ").rstrip()
-                      # 过滤不合法的域名
+                      line = line.rstrip("'").lstrip(". ")
                       if not re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", line):
                           continue
-                      converted.append(f"||{line}^")
+                      all_domains.add(line)
 
-          # 去重 + 排序
-          converted = sorted(set(converted))
+          print(f"📦 原始域名数量: {len(all_domains)}")
 
+          # 泛域名压缩
+          compressed_domains = compress_to_wildcard(all_domains)
+          print(f"✅ 压缩后域名数量: {len(compressed_domains)}")
+
+          # 生成 AdGuardHome 格式
+          output = sorted({f"||{d}^" for d in compressed_domains})
+
+          # 写入文件
           with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
-              f.write("\n".join(converted))
+              f.write(f"! 生成时间: 自动构建\n")
+              f.write(f"! 原始规则数: {len(all_domains)}\n")
+              f.write(f"! 压缩后规则数: {len(compressed_domains)}\n\n")
+              f.write("\n".join(output))
 
-          print(f"✅ 已生成 {len(converted)} 条 AdGuard Home 规则 -> AdGuardHome.txt")
+          print("✅ 已生成 AdGuardHome.txt")
           EOF
 
-      - name: Commit and push AdGuardHome rules
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add AdGuardHome.txt
-          git commit -m "🧩 Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+          git commit -m "🧩 Auto-build AdGuardHome rules with wildcard compression [skip ci]" || echo "No changes to commit"
           git push origin HEAD:main
