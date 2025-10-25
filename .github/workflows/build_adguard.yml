@@ -2,7 +2,7 @@ name: Build AdGuardHome Rules
 
 on:
   schedule:
-    - cron: "0 */2 * * *"   # 每两小时自动执行
+    - cron: "0 */2 * * *"   # 每两小时执行
   workflow_dispatch:         # 支持手动触发
 
 permissions:
@@ -29,8 +29,8 @@ jobs:
             "https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-surge2.txt"
           )
           for url in "${urls[@]}"; do
-              filename=$(basename $url)
-              echo "Downloading $url -> tmp/$filename"
+              filename=$(basename "$url")
+              echo "⬇️ Downloading $url -> tmp/$filename"
               curl -sSL --retry 3 "$url" -o "tmp/$filename"
           done
 
@@ -47,22 +47,25 @@ jobs:
               with open(file, "r", encoding="utf-8") as f:
                   for line in f:
                       line = line.strip()
-                      if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
+                      if not line or line.startswith(("!", "[", "#")):
                           continue
-                      # 去掉开头的 - ' 或多个 -，末尾的 '
+                      # 去掉 YAML 或 Surge 类规则中的特殊符号
                       line = re.sub(r"^-+\s*'?", "", line)
                       line = line.rstrip("'")
-                      # 去掉开头的点
-                      line = line.lstrip(".")
+                      # 去掉前导的点和空格
+                      line = line.lstrip(". ").rstrip()
+                      # 过滤不合法的域名
+                      if not re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", line):
+                          continue
                       converted.append(f"||{line}^")
 
-          # 去重、排序
+          # 去重 + 排序
           converted = sorted(set(converted))
 
           with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
               f.write("\n".join(converted))
 
-          print(f"✅ 已生成 {len(converted)} 条 AdGuard Home 规则，文件名：AdGuardHome.txt")
+          print(f"✅ 已生成 {len(converted)} 条 AdGuard Home 规则 -> AdGuardHome.txt")
           EOF
 
       - name: Commit and push AdGuardHome rules
@@ -70,14 +73,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add AdGuardHome.txt
-          git commit -m "Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
+          git commit -m "🧩 Update AdGuardHome rules [skip ci]" || echo "No changes to commit"
           git push origin HEAD:main
-
-      - name: Show result
-        run: |
-          echo "================= ✅ 合并完成 ================="
-          echo "📁 文件路径：AdGuardHome.txt"
-          echo "📊 总行数：$(wc -l < AdGuardHome.txt)"
-          echo "前 20 行示例："
-          head -n 20 AdGuardHome.txt
-          echo "============================================================"
