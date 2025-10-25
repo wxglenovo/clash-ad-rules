@@ -21,26 +21,41 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Download Shadowrocket rules
+      - name: Download Shadowrocket & Surge rules
         run: |
-          curl -L -o adblock_reject.txt https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt
+          mkdir -p tmp
+          urls=(
+            "https://raw.githubusercontent.com/REIJI007/AdBlock_Rule_For_Clash/main/adblock_reject.txt"
+            "https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-surge2.txt"
+          )
+          for url in "${urls[@]}"; do
+              filename=$(basename $url)
+              echo "Downloading $url -> tmp/$filename"
+              curl -sSL --retry 3 "$url" -o "tmp/$filename"
+          done
 
       - name: Convert to AdGuard Home format
         run: |
           python3 - <<'EOF'
           import re
+          import glob
 
           converted = []
 
-          with open("adblock_reject.txt", "r", encoding="utf-8") as f:
-              for line in f:
-                  line = line.strip()
-                  if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
-                      continue
-                  # 去掉开头的 - ' 或多个 -，末尾的 '
-                  line = re.sub(r"^-+\s*'?", "", line)
-                  line = line.rstrip("'")
-                  converted.append(f"||{line}^")
+          files = glob.glob("tmp/*")
+          for file in files:
+              with open(file, "r", encoding="utf-8") as f:
+                  for line in f:
+                      line = line.strip()
+                      if not line or line.startswith("!") or line.startswith("[") or line.startswith("#"):
+                          continue
+                      # 去掉开头的 - ' 或多个 -，末尾的 '
+                      line = re.sub(r"^-+\s*'?", "", line)
+                      line = line.rstrip("'")
+                      converted.append(f"||{line}^")
+
+          # 去重、排序
+          converted = sorted(set(converted))
 
           with open("AdGuardHome.txt", "w", encoding="utf-8") as f:
               f.write("\n".join(converted))
