@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ secrets.Iphone123321 }}
 
       # ✅ 下载 Shadowrocket 规则
       - name: Download Shadowrocket rules
